@@ -48,6 +48,26 @@
   - `get_claim`
   - `list_outbox`
   - `list_audit_records`
+- `wiki-kernel` 已实现：
+  - `WikiEngine::ingest`
+  - `WikiEngine::file_claim`
+  - `WikiEngine::supersede`
+  - `WikiEngine::query`
+  - `WikiEngine::run_lint`
+  - `WikiEngine::export_outbox`
+  - `WikiEngine::ack_outbox`
+  - wiki layout / page write / report write
+  - 启发式三路检索融合
+- `wiki-cli` 已实现完整命令面：
+  - `ingest`
+  - `file-claim`
+  - `supersede`
+  - `query`
+  - `lint`
+  - `outbox export`
+  - `outbox ack`
+  - `llm-smoke`
+- 根目录已补齐 `README.md` 和 `scripts/e2e.sh`。
 
 ## Risks
 

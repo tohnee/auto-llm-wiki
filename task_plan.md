@@ -25,8 +25,8 @@
 | 2 | complete | 初始化 workspace 与 crate 骨架 | `cargo test` 编译通过 |
 | 3 | complete | 实现核心领域模型与纯函数逻辑 | `cargo test -p wiki-core` 通过 |
 | 4 | complete | 实现 SQLite、outbox、audit 存储 | `cargo test -p wiki-storage` 通过 |
-| 5 | pending | 实现 kernel、wiki 投影、CLI 工作流 | 端到端测试通过 |
-| 6 | pending | 运行完整验证并整理交付说明 | 测试与诊断 clean |
+| 5 | complete | 实现 kernel、wiki 投影、CLI 工作流 | `cargo test -p wiki-kernel`、`cargo test -p wiki-cli` 通过 |
+| 6 | complete | 运行完整验证并整理交付说明 | `cargo test`、`cargo run -p wiki-cli -- --help`、`bash scripts/e2e.sh` 通过 |
 
 ## Decisions
 
@@ -47,3 +47,4 @@
 | Error | Attempt | Resolution |
 |---|---|---|
 | 批量 Python 重写 `Cargo.toml` 失败，出现三引号字符串未闭合 | 1 | 放弃同方法，改为逐文件 patch，已解决 |
+| `clap` 对 required global 参数触发运行时断言 | 1 | 将 `--db` 改为 `Option<PathBuf>`，在运行阶段自行校验 |

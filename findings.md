@@ -31,6 +31,24 @@
 - Markdown 投影作为 kernel 的副作用输出，不放进 core。
 - CLI 负责把多个应用服务串起来，并提供 `--sync-wiki` 行为。
 
+## Implemented So Far
+
+- workspace 已建立并能执行 `cargo test`。
+- `wiki-core` 已实现：
+  - `ClaimId`
+  - `MemoryTier`
+  - `Claim` / `ClaimReplacement`
+  - `retention_strength`
+  - `fuse_ranked_results`
+  - 基础事件与 lint 数据模型
+- `wiki-storage` 已实现：
+  - SQLite schema 初始化
+  - `SqliteWikiRepository::open_in_memory`
+  - `store_claim`
+  - `get_claim`
+  - `list_outbox`
+  - `list_audit_records`
+
 ## Risks
 
 - 文章没有完整公开 schema 和表结构，需要根据能力描述自行补齐。

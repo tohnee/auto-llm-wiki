@@ -21,10 +21,10 @@
 
 | Phase | Status | Description | Verification |
 |---|---|---|---|
-| 1 | in_progress | 建立规划文件与实现计划 | 规划文件存在且内容完整 |
-| 2 | pending | 初始化 workspace 与 crate 骨架 | `cargo test` 至少编译通过基础骨架 |
-| 3 | pending | 实现核心领域模型与纯函数逻辑 | 单元测试覆盖 claim、rrf、retention、lint |
-| 4 | pending | 实现 SQLite、outbox、audit 存储 | 存储测试通过 |
+| 1 | complete | 建立规划文件与实现计划 | 规划文件存在且内容完整 |
+| 2 | complete | 初始化 workspace 与 crate 骨架 | `cargo test` 编译通过 |
+| 3 | complete | 实现核心领域模型与纯函数逻辑 | `cargo test -p wiki-core` 通过 |
+| 4 | complete | 实现 SQLite、outbox、audit 存储 | `cargo test -p wiki-storage` 通过 |
 | 5 | pending | 实现 kernel、wiki 投影、CLI 工作流 | 端到端测试通过 |
 | 6 | pending | 运行完整验证并整理交付说明 | 测试与诊断 clean |
 
@@ -46,4 +46,4 @@
 
 | Error | Attempt | Resolution |
 |---|---|---|
-| None | 0 | N/A |
+| 批量 Python 重写 `Cargo.toml` 失败，出现三引号字符串未闭合 | 1 | 放弃同方法，改为逐文件 patch，已解决 |

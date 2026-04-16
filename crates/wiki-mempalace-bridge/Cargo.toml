@@ -1,0 +1,11 @@
+[package]
+name = "wiki-mempalace-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+chrono.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+wiki-core = { path = "../wiki-core" }

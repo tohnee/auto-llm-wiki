@@ -3,4 +3,4 @@ mod schema;
 mod sqlite;
 
 pub use repository::{Result, StorageError};
-pub use sqlite::SqliteWikiRepository;
+pub use sqlite::{EmbeddingState, SqliteWikiRepository};

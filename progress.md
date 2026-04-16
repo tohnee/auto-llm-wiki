@@ -11,7 +11,11 @@
 - 已完成 `wiki-kernel` 的 query/wiki projection/lint 工作流实现。
 - 已完成 `wiki-cli` 的命令面实现与集成测试。
 - 已补齐 `README.md` 与 `scripts/e2e.sh`。
-- 当前阶段：本轮功能已完成，等待 review 或继续扩展真实 provider / graph bridge。
+- 已确认生产级方案：`SQLite FTS5 + OpenAI-compatible embeddings + 本地图桥`。
+- 已新增生产级设计文档与 implementation plan。
+- 已完成 provider contracts 与运行时配置加载。
+- 已完成 FTS5 表、embedding 状态表，以及 claim 写入后的索引/状态同步最小实现。
+- 当前阶段：准备接入真实 FTS5 keyword retrieval。
 
 ## Next
 

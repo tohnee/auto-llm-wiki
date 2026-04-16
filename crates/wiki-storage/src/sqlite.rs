@@ -14,6 +14,12 @@ pub struct SqliteWikiRepository {
     conn: RefCell<Connection>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EmbeddingState {
+    pub claim_id: ClaimId,
+    pub status: String,
+}
+
 impl SqliteWikiRepository {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let conn = Connection::open(path)?;
@@ -73,6 +79,16 @@ impl SqliteWikiRepository {
         {
             let conn = self.conn.borrow_mut();
             write_claim(&conn, claim)?;
+            conn.execute(
+                "INSERT INTO claim_fts (claim_id, text) VALUES (?1, ?2)",
+                params![claim.id.to_string(), claim.text],
+            )?;
+            conn.execute(
+                "INSERT OR REPLACE INTO claim_embeddings
+                 (claim_id, model, dim, vector_json, content_hash, status, last_error, embedded_at, updated_at)
+                 VALUES (?1, NULL, NULL, NULL, NULL, 'pending', NULL, NULL, ?2)",
+                params![claim.id.to_string(), Utc::now().to_rfc3339()],
+            )?;
         }
 
         self.record_event(
@@ -142,6 +158,34 @@ impl SqliteWikiRepository {
         )?;
         let rows = stmt.query_map([], map_outbox_event)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn search_fts_claim_ids(&self, query: &str) -> Result<Vec<ClaimId>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT claim_id FROM claim_fts WHERE claim_fts MATCH ?1 ORDER BY bm25(claim_fts)",
+        )?;
+        let rows = stmt.query_map(params![query], |row| {
+            ClaimId::parse(&row.get::<_, String>(0)?).map_err(to_sql_err)
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn get_embedding_state(&self, claim_id: ClaimId) -> Result<Option<EmbeddingState>> {
+        let conn = self.conn.borrow();
+        let state = conn
+            .query_row(
+                "SELECT claim_id, status FROM claim_embeddings WHERE claim_id = ?1",
+                params![claim_id.to_string()],
+                |row| {
+                    Ok(EmbeddingState {
+                        claim_id: ClaimId::parse(&row.get::<_, String>(0)?).map_err(to_sql_err)?,
+                        status: row.get(1)?,
+                    })
+                },
+            )
+            .optional()?;
+        Ok(state)
     }
 
     pub fn export_outbox(&self, consumer: &str) -> Result<Vec<OutboxEvent>> {

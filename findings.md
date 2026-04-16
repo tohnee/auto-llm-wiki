@@ -74,3 +74,22 @@
 - 文章没有完整公开 schema 和表结构，需要根据能力描述自行补齐。
 - 真正的 BM25/vector/graph 在线实现超出当前范围，因此必须通过接口层保持可替换性。
 - 若 crate 边界设计不稳，后续会在 kernel/storage 之间出现重复模型。
+
+## Production Retrieval Design
+
+- 生产级方向已确定为：
+  - SQLite FTS5 负责关键词召回
+  - OpenAI-compatible embeddings API 负责向量召回
+  - 本地图结构 bridge 负责 graph walk
+- provider 统一暴露 hit / health / degradation 元数据。
+- 存储层将新增：
+  - `claim_fts`
+  - `claim_embeddings`
+  - `graph_nodes`
+  - `graph_edges`
+  - `provider_runs`
+- CLI 将新增：
+  - `sync-index`
+  - `rebuild-fts`
+  - `rebuild-graph`
+  - `provider-health`

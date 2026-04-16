@@ -42,6 +42,19 @@
 
 - 无。当前范围已足够开始实现。
 
+## Production Upgrade
+
+### Production Retrieval And Bridge
+
+| Phase | Status | Description | Verification |
+|---|---|---|---|
+| P1 | complete | 产出生产级 retrieval/bridge 设计文档与实现计划 | 设计文档和 plan 已落盘 |
+| P2 | in_progress | provider contracts、配置加载、FTS5/embedding 状态表 | `cargo test -p wiki-kernel parses_provider_config_with_env_style_api_key -- --exact` 与 `cargo test -p wiki-storage storing_claim_updates_fts_and_marks_embedding_pending -- --exact` 通过 |
+| P3 | pending | 真实 FTS5 keyword retrieval | 新增 kernel 检索测试通过 |
+| P4 | pending | embeddings provider 与 vector retrieval | 新增 vector 检索测试通过 |
+| P5 | pending | mempalace graph bridge 与 graph retrieval | 新增 graph 检索测试通过 |
+| P6 | pending | sync/rebuild/health 命令与完整验证 | `cargo test` 与扩展 e2e 通过 |
+
 ## Errors Encountered
 
 | Error | Attempt | Resolution |

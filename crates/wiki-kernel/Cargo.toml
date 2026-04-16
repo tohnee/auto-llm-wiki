@@ -9,6 +9,7 @@ chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
+toml.workspace = true
 uuid.workspace = true
 wiki-core = { path = "../wiki-core" }
 wiki-mempalace-bridge = { path = "../wiki-mempalace-bridge" }

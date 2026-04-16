@@ -15,7 +15,8 @@
 - 已新增生产级设计文档与 implementation plan。
 - 已完成 provider contracts 与运行时配置加载。
 - 已完成 FTS5 表、embedding 状态表，以及 claim 写入后的索引/状态同步最小实现。
-- 当前阶段：准备接入真实 FTS5 keyword retrieval。
+- 已完成 `SqliteFtsRetriever`，并把 `WikiEngine.query()` 的关键词路径切到真实 FTS5 检索。
+- 当前阶段：准备接入 embeddings provider 与 vector retrieval。
 
 ## Next
 

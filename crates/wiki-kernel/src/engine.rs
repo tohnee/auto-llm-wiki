@@ -9,6 +9,7 @@ use wiki_storage::{SqliteWikiRepository, StorageError};
 
 use crate::{
     lint::{render_report, run_lint},
+    providers::keyword::{KeywordRetriever, SqliteFtsRetriever},
     retrieval::retrieve_claims,
     wiki::{ensure_layout, slugify, write_page, write_report},
 };
@@ -81,7 +82,8 @@ impl WikiEngine {
 
     pub fn query(&self, actor: &str, query: &str, options: QueryOptions) -> Result<QueryResult> {
         let claims = self.repo.list_claims()?;
-        let ranked = retrieve_claims(&claims, query);
+        let keyword_hits = SqliteFtsRetriever::new(&self.repo).retrieve(query)?;
+        let ranked = retrieve_claims(&claims, &keyword_hits, query);
         let top_claims: Vec<Claim> = ranked.into_iter().take(5).collect();
 
         self.repo.record_event(

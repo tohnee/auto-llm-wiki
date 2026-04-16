@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use chrono::Utc;
 use wiki_core::{fuse_ranked_results, retention_strength, Claim, ClaimId, RankedClaim};
 
-pub fn retrieve_claims(claims: &[Claim], query: &str) -> Vec<Claim> {
-    let bm25 = rank_by_keyword(claims, query);
+pub fn retrieve_claims(claims: &[Claim], keyword_hits: &[RankedClaim], query: &str) -> Vec<Claim> {
+    let bm25 = keyword_hits.to_vec();
     let vector = rank_by_overlap(claims, query);
     let graph = rank_by_graph_hint(claims, query);
 
@@ -31,14 +31,6 @@ pub fn retrieve_claims(claims: &[Claim], query: &str) -> Vec<Claim> {
 
     ranked.sort_by(|left, right| right.0.total_cmp(&left.0));
     ranked.into_iter().map(|(_, claim)| claim).collect()
-}
-
-fn rank_by_keyword(claims: &[Claim], query: &str) -> Vec<RankedClaim> {
-    let tokens = tokenize(query);
-    rank_claims(claims, |claim| {
-        let haystack = claim.text.to_lowercase();
-        tokens.iter().filter(|token| haystack.contains(token.as_str())).count() as f64
-    })
 }
 
 fn rank_by_overlap(claims: &[Claim], query: &str) -> Vec<RankedClaim> {

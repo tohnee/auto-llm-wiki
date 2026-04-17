@@ -166,4 +166,5 @@ bash scripts/e2e.sh
 ## Notes
 
 - Retrieval is intentionally implemented with replaceable heuristic channels for now; real BM25, vector search and graph walk providers can be plugged in later.
-- `wiki-mempalace-bridge` is a placeholder integration surface and is not wired to an external graph service yet.
+- `query` can auto-construct the real vector provider from runtime config when vector retrieval is enabled.
+- provider runs and degradation paths are persisted for query and sync-index flows.

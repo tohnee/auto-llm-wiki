@@ -5,5 +5,5 @@ mod sqlite;
 pub use repository::{Result, StorageError};
 pub use sqlite::{
     EmbeddingState, GraphEdgeRecord, GraphNodeRecord, SqliteWikiRepository, StoredEmbedding,
-    StoredPage, StoredSource,
+    StoredPage, StoredProviderRun, StoredSource,
 };

@@ -62,6 +62,15 @@ pub struct GraphEdgeRecord {
     pub weight: f64,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredProviderRun {
+    pub provider_name: String,
+    pub operation: String,
+    pub target_ref: String,
+    pub status: String,
+    pub error_message: Option<String>,
+}
+
 impl SqliteWikiRepository {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let conn = Connection::open(path)?;
@@ -249,10 +258,11 @@ impl SqliteWikiRepository {
 
     pub fn search_fts_claim_ids(&self, query: &str) -> Result<Vec<ClaimId>> {
         let conn = self.conn.borrow();
+        let match_query = sanitize_fts_query(query);
         let mut stmt = conn.prepare(
             "SELECT claim_id FROM claim_fts WHERE claim_fts MATCH ?1 ORDER BY bm25(claim_fts)",
         )?;
-        let rows = stmt.query_map(params![query], |row| {
+        let rows = stmt.query_map(params![match_query], |row| {
             ClaimId::parse(&row.get::<_, String>(0)?).map_err(to_sql_err)
         })?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -470,6 +480,54 @@ impl SqliteWikiRepository {
         Ok(count as usize)
     }
 
+    pub fn record_provider_run(
+        &self,
+        provider_name: &str,
+        operation: &str,
+        target_ref: &str,
+        status: &str,
+        latency_ms: i64,
+        error_message: Option<&str>,
+        payload_json: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.borrow_mut();
+        conn.execute(
+            "INSERT INTO provider_runs
+             (run_id, provider_name, operation, target_ref, status, latency_ms, error_message, payload_json, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                Uuid::new_v4().to_string(),
+                provider_name,
+                operation,
+                target_ref,
+                status,
+                latency_ms,
+                error_message,
+                payload_json,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_provider_runs(&self) -> Result<Vec<StoredProviderRun>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT provider_name, operation, target_ref, status, error_message
+             FROM provider_runs ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(StoredProviderRun {
+                provider_name: row.get(0)?,
+                operation: row.get(1)?,
+                target_ref: row.get(2)?,
+                status: row.get(3)?,
+                error_message: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
     pub fn ack_outbox(&self, consumer: &str, event_id: Uuid) -> Result<()> {
         let conn = self.conn.borrow_mut();
         conn.execute(
@@ -557,6 +615,19 @@ fn decode_tier(raw: &str) -> MemoryTier {
         "episodic" => MemoryTier::Episodic,
         "procedural" => MemoryTier::Procedural,
         _ => MemoryTier::Semantic,
+    }
+}
+
+fn sanitize_fts_query(query: &str) -> String {
+    let tokens: Vec<String> = query
+        .split(|ch: char| !ch.is_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(|token| format!("\"{token}\""))
+        .collect();
+    if tokens.is_empty() {
+        "\"\"".to_owned()
+    } else {
+        tokens.join(" OR ")
     }
 }
 

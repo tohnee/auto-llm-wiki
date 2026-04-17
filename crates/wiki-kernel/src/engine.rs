@@ -120,7 +120,50 @@ impl WikiEngine {
     }
 
     pub fn query(&self, actor: &str, query: &str, options: QueryOptions) -> Result<QueryResult> {
-        self.query_internal(actor, query, options, None::<&CosineVectorRetriever<'_, NoopEmbeddingProvider>>)
+        if self.runtime_config.retrieval.vector.enabled
+            && !self.runtime_config.retrieval.vector.base_url.is_empty()
+        {
+            let client = crate::OpenAiCompatibleEmbeddingClient::new(
+                self.runtime_config.retrieval.vector.base_url.clone(),
+                self.runtime_config.retrieval.vector.api_key.clone(),
+                self.runtime_config.retrieval.vector.model.clone(),
+                self.runtime_config.retrieval.vector.timeout_ms,
+            )?;
+            let retriever = CosineVectorRetriever::new(
+                &self.repo,
+                &client,
+                &self.runtime_config.retrieval.vector.model,
+                self.runtime_config.retrieval.vector.top_k,
+            );
+            match self.query_internal(actor, query, options.clone(), Some(&retriever)) {
+                Ok(result) => Ok(result),
+                Err(KernelError::Embedding(error)) => {
+                    self.repo.record_provider_run(
+                        "vector-openai-compatible",
+                        "query",
+                        query,
+                        "degraded",
+                        0,
+                        Some(&error.to_string()),
+                        None,
+                    )?;
+                    self.repo.record_audit(
+                        actor,
+                        AuditAction::Query,
+                        &format!("Query `{query}` degraded providers: 1"),
+                    )?;
+                    self.query_internal(
+                        actor,
+                        query,
+                        options,
+                        None::<&CosineVectorRetriever<'_, NoopEmbeddingProvider>>,
+                    )
+                }
+                Err(other) => Err(other),
+            }
+        } else {
+            self.query_internal(actor, query, options, None::<&CosineVectorRetriever<'_, NoopEmbeddingProvider>>)
+        }
     }
 
     pub fn query_with_vector_retriever<P>(
@@ -148,22 +191,82 @@ impl WikiEngine {
     {
         let claims = self.repo.list_claims()?;
         let keyword_hits = SqliteFtsRetriever::new(&self.repo).retrieve(query)?;
+        self.repo.record_provider_run(
+            "keyword-fts5",
+            "query",
+            query,
+            "ready",
+            0,
+            None,
+            Some(&serde_json::json!({ "hits": keyword_hits.len() }).to_string()),
+        )?;
         let vector_hits = if self.runtime_config.retrieval.vector.enabled {
             match vector_retriever {
-                Some(retriever) => retriever.retrieve(query)?,
-                None => Vec::new(),
+                Some(retriever) => {
+                    let hits = retriever.retrieve(query)?;
+                    self.repo.record_provider_run(
+                        "vector-openai-compatible",
+                        "query",
+                        query,
+                        "ready",
+                        0,
+                        None,
+                        Some(&serde_json::json!({ "hits": hits.len() }).to_string()),
+                    )?;
+                    hits
+                }
+                None => {
+                    self.repo.record_provider_run(
+                        "vector-openai-compatible",
+                        "query",
+                        query,
+                        "degraded",
+                        0,
+                        Some("vector provider not configured for this query"),
+                        None,
+                    )?;
+                    Vec::new()
+                }
             }
         } else {
+            self.repo.record_provider_run(
+                "vector-openai-compatible",
+                "query",
+                query,
+                "degraded",
+                0,
+                Some("vector retrieval disabled"),
+                None,
+            )?;
             Vec::new()
         };
         let graph_hits = if self.runtime_config.retrieval.graph.enabled {
-            MempalaceGraphRetriever::new(
+            let hits = MempalaceGraphRetriever::new(
                 &self.repo,
                 self.runtime_config.retrieval.graph.walk_depth,
                 self.runtime_config.retrieval.graph.max_neighbors,
             )
-            .retrieve(query)?
+            .retrieve(query)?;
+            self.repo.record_provider_run(
+                "graph-mempalace-local",
+                "query",
+                query,
+                "ready",
+                0,
+                None,
+                Some(&serde_json::json!({ "hits": hits.len() }).to_string()),
+            )?;
+            hits
         } else {
+            self.repo.record_provider_run(
+                "graph-mempalace-local",
+                "query",
+                query,
+                "degraded",
+                0,
+                Some("graph retrieval disabled"),
+                None,
+            )?;
             Vec::new()
         };
         let ranked = retrieve_claims(&claims, &keyword_hits, &vector_hits, &graph_hits, query);
@@ -176,6 +279,19 @@ impl WikiEngine {
         )?;
         self.repo
             .record_audit(actor, AuditAction::Query, &format!("Served query `{query}`"))?;
+        let degraded: Vec<_> = self
+            .repo
+            .list_provider_runs()?
+            .into_iter()
+            .filter(|run| run.target_ref == query && run.status == "degraded")
+            .collect();
+        if !degraded.is_empty() {
+            self.repo.record_audit(
+                actor,
+                AuditAction::Query,
+                &format!("Query `{query}` degraded providers: {}", degraded.len()),
+            )?;
+        }
 
         let page_path = if options.write_page {
             let title = options
@@ -269,6 +385,15 @@ impl WikiEngine {
                                 &vector,
                                 &content_hash,
                             )?;
+                            self.repo.record_provider_run(
+                                "vector-openai-compatible",
+                                "sync-index",
+                                &claim.id.to_string(),
+                                "ready",
+                                0,
+                                None,
+                                Some(&serde_json::json!({ "embedded": true }).to_string()),
+                            )?;
                             embedded_claims += 1;
                         }
                         Err(error) => {
@@ -277,6 +402,15 @@ impl WikiEngine {
                                 &self.runtime_config.retrieval.vector.model,
                                 &content_hash,
                                 &error.to_string(),
+                            )?;
+                            self.repo.record_provider_run(
+                                "vector-openai-compatible",
+                                "sync-index",
+                                &claim.id.to_string(),
+                                "failed",
+                                0,
+                                Some(&error.to_string()),
+                                None,
                             )?;
                         }
                     }

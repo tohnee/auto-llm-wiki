@@ -75,12 +75,14 @@
   - `MempalaceGraphBridge`
   - `MempalaceGraphRetriever`
   - embedding 缓存写入与 `ready/pending` 状态存取
+  - `WikiEngine::query` 自动 real vector provider 装配
   - `WikiEngine::query_with_vector_retriever`
   - `WikiEngine::sync_index`
   - `WikiEngine::provider_health`
   - `WikiEngine::rebuild_fts`
   - `WikiEngine::rebuild_graph`
   - CLI `--config` 加载与 `sync-index/rebuild-fts/rebuild-graph/provider-health`
+  - `provider_runs` 持久化与 query/sync-index 降级审计
 
 ## Risks
 

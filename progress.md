@@ -18,7 +18,8 @@
 - 已完成 `SqliteFtsRetriever`，并把 `WikiEngine.query()` 的关键词路径切到真实 FTS5 检索。
 - 已完成 OpenAI-compatible embeddings client、本地 cosine similarity retrieval，以及基于 retriever 的 query 入口。
 - 已完成 mempalace graph bridge、本地 graph retrieval、`sync-index`、`provider-health`、`rebuild-fts`、`rebuild-graph`。
-- 当前阶段：生产级 retrieval/bridge 这一轮实现与验证完成。
+- 已完成 `query()` 自动 real vector provider 装配、`provider_runs` 持久化与降级审计、扩展后的 `scripts/e2e.sh`。
+- 当前阶段：生产级 retrieval/bridge 强化实现与验证完成。
 
 ## Next
 

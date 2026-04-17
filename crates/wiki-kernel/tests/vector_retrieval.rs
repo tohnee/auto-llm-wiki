@@ -7,8 +7,9 @@ use std::{
 use tempfile::tempdir;
 use wiki_core::{Claim, ClaimId, MemoryTier};
 use wiki_kernel::{
-    CosineVectorRetriever, EmbeddingProvider, OpenAiCompatibleEmbeddingClient, QueryOptions,
-    RuntimeConfig, WikiEngine,
+    CosineVectorRetriever, EmbeddingProvider, GraphConfig, KeywordConfig,
+    OpenAiCompatibleEmbeddingClient, QueryOptions, RetrievalConfig, RuntimeConfig, VectorConfig,
+    WikiEngine,
 };
 use wiki_storage::SqliteWikiRepository;
 
@@ -105,6 +106,79 @@ fn vector_retrieval_uses_cached_embeddings_and_cosine_similarity() {
             &engine_retriever,
         )
         .expect("query");
+
+    assert_eq!(result.claims[0].id, strong.id);
+}
+
+#[test]
+fn query_automatically_uses_real_vector_provider_from_runtime_config() {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept");
+        let mut buffer = [0u8; 4096];
+        let _ = stream.read(&mut buffer).expect("read");
+        let body = r#"{"data":[{"embedding":[1.0,0.0]}]}"#;
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream.write_all(response.as_bytes()).expect("write");
+    });
+
+    let repo = SqliteWikiRepository::open_in_memory().expect("repo");
+    let strong = Claim::new(
+        ClaimId::new(),
+        "Completely unrelated words here",
+        MemoryTier::Semantic,
+    );
+    let weak = Claim::new(
+        ClaimId::new(),
+        "Another claim with different semantics",
+        MemoryTier::Semantic,
+    );
+    repo.store_claim("tester", &strong).expect("store strong");
+    repo.store_claim("tester", &weak).expect("store weak");
+    repo.upsert_embedding(strong.id, "embedding-small", &[1.0, 0.0], "hash-strong")
+        .expect("strong embedding");
+    repo.upsert_embedding(weak.id, "embedding-small", &[0.0, 1.0], "hash-weak")
+        .expect("weak embedding");
+
+    let temp = tempdir().expect("tempdir");
+    let engine = WikiEngine::with_config(
+        repo,
+        temp.path().join("wiki"),
+        RuntimeConfig {
+            retrieval: RetrievalConfig {
+                keyword: KeywordConfig {
+                    enabled: true,
+                    top_k: 20,
+                },
+                vector: VectorConfig {
+                    enabled: true,
+                    base_url: format!("http://{addr}"),
+                    api_key: Some("secret".to_owned()),
+                    model: "embedding-small".to_owned(),
+                    timeout_ms: 5_000,
+                    batch_size: 16,
+                    top_k: 20,
+                },
+                graph: GraphConfig {
+                    enabled: false,
+                    walk_depth: 2,
+                    max_neighbors: 32,
+                    top_k: 20,
+                },
+            },
+        },
+    )
+    .expect("engine");
+
+    let result = engine
+        .query("tester", "vector-only-query", QueryOptions::default())
+        .expect("query");
+    handle.join().expect("server thread");
 
     assert_eq!(result.claims[0].id, strong.id);
 }

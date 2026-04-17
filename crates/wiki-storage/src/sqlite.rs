@@ -20,6 +20,15 @@ pub struct EmbeddingState {
     pub status: String,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct StoredEmbedding {
+    pub claim_id: ClaimId,
+    pub model: String,
+    pub vector: Vec<f32>,
+    pub content_hash: String,
+    pub status: String,
+}
+
 impl SqliteWikiRepository {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let conn = Connection::open(path)?;
@@ -186,6 +195,51 @@ impl SqliteWikiRepository {
             )
             .optional()?;
         Ok(state)
+    }
+
+    pub fn upsert_embedding(
+        &self,
+        claim_id: ClaimId,
+        model: &str,
+        vector: &[f32],
+        content_hash: &str,
+    ) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn.borrow_mut();
+        conn.execute(
+            "INSERT OR REPLACE INTO claim_embeddings
+             (claim_id, model, dim, vector_json, content_hash, status, last_error, embedded_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, 'ready', NULL, ?6, ?6)",
+            params![
+                claim_id.to_string(),
+                model,
+                vector.len() as i64,
+                serde_json::to_string(vector)?,
+                content_hash,
+                now,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_ready_embeddings_by_model(&self, model: &str) -> Result<Vec<StoredEmbedding>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT claim_id, model, vector_json, content_hash, status
+             FROM claim_embeddings
+             WHERE status = 'ready' AND model = ?1",
+        )?;
+        let rows = stmt.query_map(params![model], |row| {
+            let vector_json = row.get::<_, String>(2)?;
+            Ok(StoredEmbedding {
+                claim_id: ClaimId::parse(&row.get::<_, String>(0)?).map_err(to_sql_err)?,
+                model: row.get(1)?,
+                vector: serde_json::from_str(&vector_json).map_err(to_sql_err)?,
+                content_hash: row.get(3)?,
+                status: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
     pub fn export_outbox(&self, consumer: &str) -> Result<Vec<OutboxEvent>> {

@@ -8,7 +8,9 @@ use wiki_core::{
 use wiki_storage::{SqliteWikiRepository, StorageError};
 
 use crate::{
+    config::RuntimeConfig,
     lint::{render_report, run_lint},
+    providers::embedding::{CosineVectorRetriever, EmbeddingError, EmbeddingProvider},
     providers::keyword::{KeywordRetriever, SqliteFtsRetriever},
     retrieval::retrieve_claims,
     wiki::{ensure_layout, slugify, write_page, write_report},
@@ -19,6 +21,7 @@ pub type Result<T> = std::result::Result<T, KernelError>;
 pub struct WikiEngine {
     repo: SqliteWikiRepository,
     wiki_dir: PathBuf,
+    runtime_config: RuntimeConfig,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -41,13 +44,27 @@ pub enum KernelError {
     Io(#[from] std::io::Error),
     #[error("claim not found: {0}")]
     ClaimNotFound(ClaimId),
+    #[error("embedding provider error: {0}")]
+    Embedding(#[from] EmbeddingError),
 }
 
 impl WikiEngine {
     pub fn new(repo: SqliteWikiRepository, wiki_dir: impl AsRef<Path>) -> Result<Self> {
+        Self::with_config(repo, wiki_dir, RuntimeConfig::vector_enabled_for_tests("disabled"))
+    }
+
+    pub fn with_config(
+        repo: SqliteWikiRepository,
+        wiki_dir: impl AsRef<Path>,
+        runtime_config: RuntimeConfig,
+    ) -> Result<Self> {
         let wiki_dir = wiki_dir.as_ref().to_path_buf();
         ensure_layout(&wiki_dir)?;
-        Ok(Self { repo, wiki_dir })
+        Ok(Self {
+            repo,
+            wiki_dir,
+            runtime_config,
+        })
     }
 
     pub fn ingest(&self, actor: &str, source_uri: &str, content: &str, scope: &str) -> Result<Claim> {
@@ -81,9 +98,43 @@ impl WikiEngine {
     }
 
     pub fn query(&self, actor: &str, query: &str, options: QueryOptions) -> Result<QueryResult> {
+        self.query_internal(actor, query, options, None::<&CosineVectorRetriever<'_, NoopEmbeddingProvider>>)
+    }
+
+    pub fn query_with_vector_retriever<P>(
+        &self,
+        actor: &str,
+        query: &str,
+        options: QueryOptions,
+        retriever: &CosineVectorRetriever<'_, P>,
+    ) -> Result<QueryResult>
+    where
+        P: EmbeddingProvider,
+    {
+        self.query_internal(actor, query, options, Some(retriever))
+    }
+
+    fn query_internal<P>(
+        &self,
+        actor: &str,
+        query: &str,
+        options: QueryOptions,
+        vector_retriever: Option<&CosineVectorRetriever<'_, P>>,
+    ) -> Result<QueryResult>
+    where
+        P: EmbeddingProvider,
+    {
         let claims = self.repo.list_claims()?;
         let keyword_hits = SqliteFtsRetriever::new(&self.repo).retrieve(query)?;
-        let ranked = retrieve_claims(&claims, &keyword_hits, query);
+        let vector_hits = if self.runtime_config.retrieval.vector.enabled {
+            match vector_retriever {
+                Some(retriever) => retriever.retrieve(query)?,
+                None => Vec::new(),
+            }
+        } else {
+            Vec::new()
+        };
+        let ranked = retrieve_claims(&claims, &keyword_hits, &vector_hits, query);
         let top_claims: Vec<Claim> = ranked.into_iter().take(5).collect();
 
         self.repo.record_event(
@@ -145,6 +196,14 @@ impl WikiEngine {
 
     pub fn wiki_dir(&self) -> &Path {
         &self.wiki_dir
+    }
+}
+
+struct NoopEmbeddingProvider;
+
+impl EmbeddingProvider for NoopEmbeddingProvider {
+    fn embed_text(&self, _input: &str) -> crate::EmbeddingResult<Vec<f32>> {
+        Ok(Vec::new())
     }
 }
 

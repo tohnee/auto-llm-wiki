@@ -68,6 +68,12 @@
   - `outbox ack`
   - `llm-smoke`
 - 根目录已补齐 `README.md` 和 `scripts/e2e.sh`。
+- 生产级 retrieval 当前已落地：
+  - `SqliteFtsRetriever`
+  - `OpenAiCompatibleEmbeddingClient`
+  - `CosineVectorRetriever`
+  - embedding 缓存写入与 `ready/pending` 状态存取
+  - `WikiEngine::query_with_vector_retriever`
 
 ## Risks
 

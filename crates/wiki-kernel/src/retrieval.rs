@@ -3,9 +3,18 @@ use std::collections::HashMap;
 use chrono::Utc;
 use wiki_core::{fuse_ranked_results, retention_strength, Claim, ClaimId, RankedClaim};
 
-pub fn retrieve_claims(claims: &[Claim], keyword_hits: &[RankedClaim], query: &str) -> Vec<Claim> {
+pub fn retrieve_claims(
+    claims: &[Claim],
+    keyword_hits: &[RankedClaim],
+    vector_hits: &[RankedClaim],
+    query: &str,
+) -> Vec<Claim> {
     let bm25 = keyword_hits.to_vec();
-    let vector = rank_by_overlap(claims, query);
+    let vector = if vector_hits.is_empty() {
+        rank_by_overlap(claims, query)
+    } else {
+        vector_hits.to_vec()
+    };
     let graph = rank_by_graph_hint(claims, query);
 
     let fused = fuse_ranked_results(&bm25, &vector, &graph);

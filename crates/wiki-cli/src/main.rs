@@ -4,7 +4,10 @@ use clap::Parser;
 use thiserror::Error;
 use uuid::Uuid;
 use wiki_core::{ClaimId, MemoryTier};
-use wiki_kernel::{QueryOptions, WikiEngine};
+use wiki_kernel::{
+    load_runtime_config, ConfigError, CosineVectorRetriever, EmbeddingError,
+    OpenAiCompatibleEmbeddingClient, QueryOptions, RuntimeConfig, WikiEngine,
+};
 use wiki_storage::SqliteWikiRepository;
 
 use crate::args::{
@@ -22,15 +25,24 @@ fn main() {
 fn run() -> Result<(), CliError> {
     let cli = Cli::parse();
     let db = cli.db.ok_or(CliError::MissingDbPath)?;
+    let runtime_config = if let Some(config_path) = &cli.config {
+        load_runtime_config(config_path)?
+    } else {
+        RuntimeConfig::default()
+    };
     let repo = SqliteWikiRepository::open(&db)?;
-    let engine = WikiEngine::new(repo, &cli.wiki_dir)?;
+    let engine = WikiEngine::with_config(repo, &cli.wiki_dir, runtime_config.clone())?;
 
     match cli.command {
         Command::Ingest(args) => ingest(&engine, args)?,
         Command::FileClaim(args) => file_claim(&engine, args)?,
         Command::Supersede(args) => supersede(&engine, args)?,
-        Command::Query(args) => query(&engine, args)?,
+        Command::Query(args) => query(&engine, &runtime_config, args)?,
         Command::Lint => lint(&engine)?,
+        Command::SyncIndex => sync_index(&engine, &runtime_config)?,
+        Command::RebuildFts => rebuild_fts(&engine)?,
+        Command::RebuildGraph => rebuild_graph(&engine)?,
+        Command::ProviderHealth => provider_health(&engine)?,
         Command::Outbox(args) => outbox(&engine, args)?,
         Command::LlmSmoke(args) => llm_smoke(args),
     }
@@ -81,15 +93,30 @@ fn supersede(engine: &WikiEngine, args: SupersedeArgs) -> Result<(), CliError> {
     Ok(())
 }
 
-fn query(engine: &WikiEngine, args: QueryArgs) -> Result<(), CliError> {
-    let result = engine.query(
-        "cli",
-        &args.query,
-        QueryOptions {
-            write_page: args.write_page,
-            page_title: args.page_title,
-        },
-    )?;
+fn query(engine: &WikiEngine, runtime_config: &RuntimeConfig, args: QueryArgs) -> Result<(), CliError> {
+    let options = QueryOptions {
+        write_page: args.write_page,
+        page_title: args.page_title,
+    };
+    let result = if runtime_config.retrieval.vector.enabled
+        && !runtime_config.retrieval.vector.base_url.is_empty()
+    {
+        let client = OpenAiCompatibleEmbeddingClient::new(
+            runtime_config.retrieval.vector.base_url.clone(),
+            runtime_config.retrieval.vector.api_key.clone(),
+            runtime_config.retrieval.vector.model.clone(),
+            runtime_config.retrieval.vector.timeout_ms,
+        )?;
+        let retriever = CosineVectorRetriever::new(
+            engine.repo(),
+            &client,
+            &runtime_config.retrieval.vector.model,
+            runtime_config.retrieval.vector.top_k,
+        );
+        engine.query_with_vector_retriever("cli", &args.query, options, &retriever)?
+    } else {
+        engine.query("cli", &args.query, options)?
+    };
     println!(
         "{}",
         serde_json::to_string_pretty(&serde_json::json!({
@@ -106,6 +133,46 @@ fn query(engine: &WikiEngine, args: QueryArgs) -> Result<(), CliError> {
 fn lint(engine: &WikiEngine) -> Result<(), CliError> {
     let issues = engine.run_lint("cli")?;
     println!("{}", serde_json::to_string_pretty(&issues)?);
+    Ok(())
+}
+
+fn sync_index(engine: &WikiEngine, runtime_config: &RuntimeConfig) -> Result<(), CliError> {
+    let result = if runtime_config.retrieval.vector.enabled
+        && !runtime_config.retrieval.vector.base_url.is_empty()
+    {
+        let client = OpenAiCompatibleEmbeddingClient::new(
+            runtime_config.retrieval.vector.base_url.clone(),
+            runtime_config.retrieval.vector.api_key.clone(),
+            runtime_config.retrieval.vector.model.clone(),
+            runtime_config.retrieval.vector.timeout_ms,
+        )?;
+        engine.sync_index("cli", Some(&client))?
+    } else {
+        engine.sync_index::<OpenAiCompatibleEmbeddingClient>("cli", None)?
+    };
+    println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+        "embedded_claims": result.embedded_claims,
+        "graph_nodes": result.graph_nodes,
+        "graph_edges": result.graph_edges,
+    }))?);
+    Ok(())
+}
+
+fn rebuild_fts(engine: &WikiEngine) -> Result<(), CliError> {
+    let rows = engine.rebuild_fts()?;
+    println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "rows": rows }))?);
+    Ok(())
+}
+
+fn rebuild_graph(engine: &WikiEngine) -> Result<(), CliError> {
+    engine.rebuild_graph()?;
+    println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "rebuilt": true }))?);
+    Ok(())
+}
+
+fn provider_health(engine: &WikiEngine) -> Result<(), CliError> {
+    let health = engine.provider_health()?;
+    println!("{}", serde_json::to_string_pretty(&health)?);
     Ok(())
 }
 
@@ -151,8 +218,12 @@ enum CliError {
     Storage(#[from] wiki_storage::StorageError),
     #[error("kernel error: {0}")]
     Kernel(#[from] wiki_kernel::KernelError),
+    #[error("config error: {0}")]
+    Config(#[from] ConfigError),
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("embedding error: {0}")]
+    Embedding(#[from] EmbeddingError),
     #[error("uuid error: {0}")]
     Uuid(#[from] uuid::Error),
     #[error("missing required --db path")]

@@ -29,6 +29,39 @@ pub struct StoredEmbedding {
     pub status: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredSource {
+    pub id: String,
+    pub uri: String,
+    pub content: String,
+    pub scope: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredPage {
+    pub slug: String,
+    pub title: String,
+    pub path: String,
+    pub body: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GraphNodeRecord {
+    pub node_id: String,
+    pub node_type: String,
+    pub external_ref: String,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GraphEdgeRecord {
+    pub edge_id: String,
+    pub from_node: String,
+    pub to_node: String,
+    pub edge_type: String,
+    pub weight: f64,
+}
+
 impl SqliteWikiRepository {
     pub fn open(path: impl AsRef<Path>) -> Result<Self> {
         let conn = Connection::open(path)?;
@@ -160,6 +193,51 @@ impl SqliteWikiRepository {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
+    pub fn list_claims_needing_embeddings(&self, model: &str) -> Result<Vec<Claim>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT c.id, c.text, c.tier, c.confidence, c.quality_score, c.supersedes, c.stale, c.access_count, c.created_at, c.updated_at
+             FROM claims c
+             LEFT JOIN claim_embeddings e ON e.claim_id = c.id
+             WHERE e.claim_id IS NULL OR e.status != 'ready' OR IFNULL(e.model, '') != ?1
+             ORDER BY c.updated_at DESC",
+        )?;
+        let rows = stmt.query_map(params![model], map_claim)?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn list_sources(&self) -> Result<Vec<StoredSource>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT id, uri, content, scope FROM sources ORDER BY created_at ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(StoredSource {
+                id: row.get(0)?,
+                uri: row.get(1)?,
+                content: row.get(2)?,
+                scope: row.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn list_pages(&self) -> Result<Vec<StoredPage>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT slug, title, path, body FROM pages ORDER BY updated_at ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(StoredPage {
+                slug: row.get(0)?,
+                title: row.get(1)?,
+                path: row.get(2)?,
+                body: row.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
     pub fn list_outbox(&self) -> Result<Vec<OutboxEvent>> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
@@ -222,6 +300,24 @@ impl SqliteWikiRepository {
         Ok(())
     }
 
+    pub fn mark_embedding_failed(
+        &self,
+        claim_id: ClaimId,
+        model: &str,
+        content_hash: &str,
+        error_message: &str,
+    ) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        let conn = self.conn.borrow_mut();
+        conn.execute(
+            "INSERT OR REPLACE INTO claim_embeddings
+             (claim_id, model, dim, vector_json, content_hash, status, last_error, embedded_at, updated_at)
+             VALUES (?1, ?2, NULL, NULL, ?3, 'failed', ?4, NULL, ?5)",
+            params![claim_id.to_string(), model, content_hash, error_message, now],
+        )?;
+        Ok(())
+    }
+
     pub fn list_ready_embeddings_by_model(&self, model: &str) -> Result<Vec<StoredEmbedding>> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
@@ -242,6 +338,98 @@ impl SqliteWikiRepository {
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
+    pub fn clear_graph(&self) -> Result<()> {
+        let conn = self.conn.borrow_mut();
+        conn.execute("DELETE FROM graph_edges", [])?;
+        conn.execute("DELETE FROM graph_nodes", [])?;
+        Ok(())
+    }
+
+    pub fn upsert_graph_node(
+        &self,
+        node_id: &str,
+        node_type: &str,
+        external_ref: &str,
+        label: &str,
+        payload_json: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.borrow_mut();
+        conn.execute(
+            "INSERT OR REPLACE INTO graph_nodes
+             (node_id, node_type, external_ref, label, payload_json, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                node_id,
+                node_type,
+                external_ref,
+                label,
+                payload_json,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn upsert_graph_edge(
+        &self,
+        edge_id: &str,
+        from_node: &str,
+        to_node: &str,
+        edge_type: &str,
+        weight: f64,
+        payload_json: Option<&str>,
+    ) -> Result<()> {
+        let conn = self.conn.borrow_mut();
+        conn.execute(
+            "INSERT OR REPLACE INTO graph_edges
+             (edge_id, from_node, to_node, edge_type, weight, payload_json, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                edge_id,
+                from_node,
+                to_node,
+                edge_type,
+                weight,
+                payload_json,
+                Utc::now().to_rfc3339(),
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn list_graph_nodes(&self) -> Result<Vec<GraphNodeRecord>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT node_id, node_type, external_ref, label FROM graph_nodes ORDER BY node_id ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(GraphNodeRecord {
+                node_id: row.get(0)?,
+                node_type: row.get(1)?,
+                external_ref: row.get(2)?,
+                label: row.get(3)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn list_graph_edges(&self) -> Result<Vec<GraphEdgeRecord>> {
+        let conn = self.conn.borrow();
+        let mut stmt = conn.prepare(
+            "SELECT edge_id, from_node, to_node, edge_type, weight FROM graph_edges ORDER BY edge_id ASC",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(GraphEdgeRecord {
+                edge_id: row.get(0)?,
+                from_node: row.get(1)?,
+                to_node: row.get(2)?,
+                edge_type: row.get(3)?,
+                weight: row.get(4)?,
+            })
+        })?;
+        Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
     pub fn export_outbox(&self, consumer: &str) -> Result<Vec<OutboxEvent>> {
         let conn = self.conn.borrow();
         let mut stmt = conn.prepare(
@@ -254,6 +442,32 @@ impl SqliteWikiRepository {
         )?;
         let rows = stmt.query_map(params![consumer], map_outbox_event)?;
         Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
+    }
+
+    pub fn rebuild_fts(&self) -> Result<usize> {
+        let claims = self.list_claims()?;
+        let conn = self.conn.borrow_mut();
+        conn.execute("DELETE FROM claim_fts", [])?;
+        for claim in &claims {
+            conn.execute(
+                "INSERT INTO claim_fts (claim_id, text) VALUES (?1, ?2)",
+                params![claim.id.to_string(), claim.text],
+            )?;
+        }
+        Ok(claims.len())
+    }
+
+    pub fn graph_counts(&self) -> Result<(usize, usize)> {
+        let conn = self.conn.borrow();
+        let node_count: i64 = conn.query_row("SELECT COUNT(*) FROM graph_nodes", [], |row| row.get(0))?;
+        let edge_count: i64 = conn.query_row("SELECT COUNT(*) FROM graph_edges", [], |row| row.get(0))?;
+        Ok((node_count as usize, edge_count as usize))
+    }
+
+    pub fn fts_count(&self) -> Result<usize> {
+        let conn = self.conn.borrow();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM claim_fts", [], |row| row.get(0))?;
+        Ok(count as usize)
     }
 
     pub fn ack_outbox(&self, consumer: &str, event_id: Uuid) -> Result<()> {

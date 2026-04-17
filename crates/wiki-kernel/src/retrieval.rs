@@ -7,6 +7,7 @@ pub fn retrieve_claims(
     claims: &[Claim],
     keyword_hits: &[RankedClaim],
     vector_hits: &[RankedClaim],
+    graph_hits: &[RankedClaim],
     query: &str,
 ) -> Vec<Claim> {
     let bm25 = keyword_hits.to_vec();
@@ -15,7 +16,11 @@ pub fn retrieve_claims(
     } else {
         vector_hits.to_vec()
     };
-    let graph = rank_by_graph_hint(claims, query);
+    let graph = if graph_hits.is_empty() {
+        rank_by_graph_hint(claims, query)
+    } else {
+        graph_hits.to_vec()
+    };
 
     let fused = fuse_ranked_results(&bm25, &vector, &graph);
     let claim_map: HashMap<ClaimId, Claim> = claims.iter().cloned().map(|claim| (claim.id, claim)).collect();

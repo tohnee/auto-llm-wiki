@@ -72,8 +72,15 @@
   - `SqliteFtsRetriever`
   - `OpenAiCompatibleEmbeddingClient`
   - `CosineVectorRetriever`
+  - `MempalaceGraphBridge`
+  - `MempalaceGraphRetriever`
   - embedding 缓存写入与 `ready/pending` 状态存取
   - `WikiEngine::query_with_vector_retriever`
+  - `WikiEngine::sync_index`
+  - `WikiEngine::provider_health`
+  - `WikiEngine::rebuild_fts`
+  - `WikiEngine::rebuild_graph`
+  - CLI `--config` 加载与 `sync-index/rebuild-fts/rebuild-graph/provider-health`
 
 ## Risks
 

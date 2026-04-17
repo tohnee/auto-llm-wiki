@@ -9,6 +9,9 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub db: Option<PathBuf>,
 
+    #[arg(long, global = true)]
+    pub config: Option<PathBuf>,
+
     #[arg(long, global = true, default_value = "wiki")]
     pub wiki_dir: PathBuf,
 
@@ -26,6 +29,10 @@ pub enum Command {
     Supersede(SupersedeArgs),
     Query(QueryArgs),
     Lint,
+    SyncIndex,
+    RebuildFts,
+    RebuildGraph,
+    ProviderHealth,
     Outbox(OutboxCommand),
     LlmSmoke(LlmSmokeArgs),
 }

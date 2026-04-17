@@ -5,9 +5,11 @@ mod providers;
 mod retrieval;
 mod wiki;
 
-pub use config::{load_runtime_config, RuntimeConfig};
+pub use config::{load_runtime_config, ConfigError, RuntimeConfig};
 pub use engine::{KernelError, QueryOptions, QueryResult, WikiEngine};
 pub use providers::embedding::{
-    CosineVectorRetriever, EmbeddingProvider, EmbeddingResult, OpenAiCompatibleEmbeddingClient,
+    CosineVectorRetriever, EmbeddingError, EmbeddingProvider, EmbeddingResult,
+    OpenAiCompatibleEmbeddingClient,
 };
+pub use providers::graph::MempalaceGraphRetriever;
 pub use providers::keyword::{KeywordRetriever, SqliteFtsRetriever};

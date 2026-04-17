@@ -69,6 +69,34 @@ impl RuntimeConfig {
     }
 }
 
+impl Default for RuntimeConfig {
+    fn default() -> Self {
+        Self {
+            retrieval: RetrievalConfig {
+                keyword: KeywordConfig {
+                    enabled: true,
+                    top_k: 20,
+                },
+                vector: VectorConfig {
+                    enabled: false,
+                    base_url: String::new(),
+                    api_key: None,
+                    model: "embedding-small".to_owned(),
+                    timeout_ms: 30_000,
+                    batch_size: 16,
+                    top_k: 20,
+                },
+                graph: GraphConfig {
+                    enabled: true,
+                    walk_depth: 2,
+                    max_neighbors: 32,
+                    top_k: 20,
+                },
+            },
+        }
+    }
+}
+
 pub fn load_runtime_config(path: impl AsRef<Path>) -> Result<RuntimeConfig> {
     let raw = fs::read_to_string(path)?;
     let mut config: RuntimeConfig = toml::from_str(&raw)?;

@@ -17,7 +17,8 @@
 - 已完成 FTS5 表、embedding 状态表，以及 claim 写入后的索引/状态同步最小实现。
 - 已完成 `SqliteFtsRetriever`，并把 `WikiEngine.query()` 的关键词路径切到真实 FTS5 检索。
 - 已完成 OpenAI-compatible embeddings client、本地 cosine similarity retrieval，以及基于 retriever 的 query 入口。
-- 当前阶段：准备接入 mempalace graph bridge 与 graph retrieval。
+- 已完成 mempalace graph bridge、本地 graph retrieval、`sync-index`、`provider-health`、`rebuild-fts`、`rebuild-graph`。
+- 当前阶段：生产级 retrieval/bridge 这一轮实现与验证完成。
 
 ## Next
 
